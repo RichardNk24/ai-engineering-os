@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "project": {
+    "name": "ai-engineering-os-v0.1",
+    "languages": [
+      "python"
+    ],
+    "frameworks": [
+      "fastapi"
+    ],
+    "package_managers": [
+      "uv"
+    ]
+  },
+  "checks": {
+    "lint": "ruff check .",
+    "types": "mypy .",
+    "test": "pytest"
+  },
+  "autonomy": {
+    "default_level": 2,
+    "max_level": 3
+  }
+}

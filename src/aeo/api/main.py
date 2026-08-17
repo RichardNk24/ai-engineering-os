@@ -6,14 +6,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from aeo.analytics.service import engineering_analytics
-from aeo.api.schemas import RunRead, TaskRead
+from aeo.api.schemas import GuardScanRead, RunRead, TaskRead
 from aeo.db.models import EngineeringRun
 from aeo.db.session import create_session_factory
+from aeo.guardian.service import list_guard_scans
 from aeo.tasks.service import get_task, list_tasks
 
 app = FastAPI(
     title="AI Engineering OS",
-    version="0.3.0",
+    version="0.4.0",
     description="Observable engineering workflow and agent orchestration platform.",
 )
 
@@ -24,7 +25,7 @@ def project_root() -> Path:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "0.3.0"}
+    return {"status": "ok", "version": "0.4.0"}
 
 
 @app.get("/runs", response_model=list[RunRead])
@@ -63,3 +64,8 @@ def task_detail(task_id: str) -> TaskRead:
 @app.get("/stats")
 def stats() -> dict[str, object]:
     return engineering_analytics(project_root())
+
+
+@app.get("/guard/scans", response_model=list[GuardScanRead])
+def guard_scans(limit: int = Query(default=50, ge=1, le=500)) -> list[GuardScanRead]:
+    return [GuardScanRead(**asdict(scan)) for scan in list_guard_scans(project_root(), limit=limit)]

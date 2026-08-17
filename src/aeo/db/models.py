@@ -3,7 +3,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from aeo.db.base import Base
@@ -184,3 +193,62 @@ class TaskValidationAttempt(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     task: Mapped[EngineeringTask] = relationship(back_populates="validation_attempts")
+
+
+class GuardScan(Base):
+    __tablename__ = "guard_scans"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("engineering_runs.id"), unique=True, index=True
+    )
+    scope: Mapped[str] = mapped_column(String(32), default="working")
+    status: Mapped[str] = mapped_column(String(32), default="running")
+    autofix_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    autofix_applied: Mapped[bool] = mapped_column(Boolean, default=False)
+    total_findings: Mapped[int] = mapped_column(Integer, default=0)
+    blocking_findings: Mapped[int] = mapped_column(Integer, default=0)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    findings: Mapped[list[GuardFinding]] = relationship(
+        back_populates="scan", cascade="all, delete-orphan"
+    )
+    fix_attempts: Mapped[list[GuardFixAttempt]] = relationship(
+        back_populates="scan", cascade="all, delete-orphan"
+    )
+
+
+class GuardFinding(Base):
+    __tablename__ = "guard_findings"
+    __table_args__ = (UniqueConstraint("scan_id", "fingerprint", name="uq_guard_finding"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scan_id: Mapped[str] = mapped_column(ForeignKey("guard_scans.id"), index=True)
+    rule_id: Mapped[str] = mapped_column(String(128), index=True)
+    severity: Mapped[str] = mapped_column(String(32), index=True)
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    message: Mapped[str] = mapped_column(Text)
+    file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    line_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    autofixable: Mapped[bool] = mapped_column(Boolean, default=False)
+    fixed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    scan: Mapped[GuardScan] = relationship(back_populates="findings")
+
+
+class GuardFixAttempt(Base):
+    __tablename__ = "guard_fix_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scan_id: Mapped[str] = mapped_column(ForeignKey("guard_scans.id"), index=True)
+    rule_id: Mapped[str] = mapped_column(String(128), index=True)
+    command: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32))
+    duration_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    output: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    scan: Mapped[GuardScan] = relationship(back_populates="fix_attempts")

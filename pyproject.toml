@@ -1,6 +1,6 @@
 [project]
 name = "ai-engineering-os"
-version = "0.3.0"
+version = "0.4.2"
 description = "Observable AI-native engineering workflow for software teams and solo engineers."
 requires-python = ">=3.12"
 dependencies = [

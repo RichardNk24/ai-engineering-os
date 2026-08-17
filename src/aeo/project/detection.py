@@ -10,6 +10,7 @@ class DetectedProject:
     frameworks: list[str]
     package_managers: list[str]
     checks: dict[str, str]
+    fixes: dict[str, str]
 
 
 def detect_project(root: Path) -> DetectedProject:
@@ -17,17 +18,16 @@ def detect_project(root: Path) -> DetectedProject:
     frameworks: list[str] = []
     package_managers: list[str] = []
     checks: dict[str, str] = {}
+    fixes: dict[str, str] = {}
 
     pyproject = root / "pyproject.toml"
     package_json = root / "package.json"
 
     if pyproject.exists():
         languages.append("python")
-
         text = pyproject.read_text(encoding="utf-8", errors="ignore").lower()
         if "fastapi" in text:
             frameworks.append("fastapi")
-
         if (root / "uv.lock").exists():
             package_managers.append("uv")
         elif (root / "poetry.lock").exists():
@@ -37,6 +37,7 @@ def detect_project(root: Path) -> DetectedProject:
 
         if "ruff" in text:
             checks["lint"] = "ruff check ."
+            fixes["lint"] = "ruff check . --fix"
         if "mypy" in text:
             checks["types"] = "mypy ."
         if "pytest" in text:
@@ -45,12 +46,10 @@ def detect_project(root: Path) -> DetectedProject:
     if package_json.exists():
         languages.append("typescript/javascript")
         text = package_json.read_text(encoding="utf-8", errors="ignore").lower()
-
         if "next" in text:
             frameworks.append("nextjs")
         if "@nestjs/core" in text:
             frameworks.append("nestjs")
-
         if (root / "pnpm-lock.yaml").exists():
             package_managers.append("pnpm")
             checks.setdefault("lint", "pnpm lint")
@@ -66,4 +65,5 @@ def detect_project(root: Path) -> DetectedProject:
         frameworks=frameworks,
         package_managers=package_managers,
         checks=checks,
+        fixes=fixes,
     )

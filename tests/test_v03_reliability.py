@@ -106,7 +106,7 @@ def test_run_captures_execution_environment(tmp_path: Path) -> None:
         )
 
     assert environment is not None
-    assert environment.aeo_version == "0.3.0"
+    assert environment.aeo_version == "0.4.0"
     assert environment.python_version
     assert environment.os_name
 
@@ -159,4 +159,4 @@ def test_schema_version_is_persisted(tmp_path: Path) -> None:
         metadata = session.get(AeoSchemaMetadata, 1)
 
     assert metadata is not None
-    assert metadata.schema_version == 3
+    assert metadata.schema_version == 4

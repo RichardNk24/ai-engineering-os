@@ -27,7 +27,7 @@ def test_v03_api_exposes_tasks_runs_and_stats(tmp_path: Path, monkeypatch) -> No
 
     health = client.get("/health")
     assert health.status_code == 200
-    assert health.json()["version"] == "0.3.0"
+    assert health.json()["version"] == "0.4.0"
 
     tasks = client.get("/tasks")
     assert tasks.status_code == 200
@@ -36,7 +36,7 @@ def test_v03_api_exposes_tasks_runs_and_stats(tmp_path: Path, monkeypatch) -> No
     runs = client.get("/runs")
     assert runs.status_code == 200
     assert len(runs.json()) == 1
-    assert runs.json()[0]["environment"]["aeo_version"] == "0.3.0"
+    assert runs.json()[0]["environment"]["aeo_version"] == "0.4.0"
 
     stats = client.get("/stats")
     assert stats.status_code == 200

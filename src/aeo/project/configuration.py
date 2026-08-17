@@ -9,7 +9,6 @@ from aeo.project.detection import detect_project
 
 def initialize_project(root: Path) -> dict:
     detected = detect_project(root)
-
     config = {
         "version": 1,
         "project": {
@@ -19,17 +18,15 @@ def initialize_project(root: Path) -> dict:
             "package_managers": detected.package_managers,
         },
         "checks": detected.checks,
-        "autonomy": {
-            "default_level": 2,
-            "max_level": 3,
+        "fixes": detected.fixes,
+        "guardian": {
+            "blocking_severities": ["error", "blocker"],
+            "max_text_file_bytes": 1_000_000,
         },
+        "autonomy": {"default_level": 2, "max_level": 3},
     }
-
     aeo_dir(root).mkdir(parents=True, exist_ok=True)
-    project_config_path(root).write_text(
-        json.dumps(config, indent=2),
-        encoding="utf-8",
-    )
+    project_config_path(root).write_text(json.dumps(config, indent=2), encoding="utf-8")
     return config
 
 
@@ -39,4 +36,11 @@ def load_project_config(root: Path) -> dict:
         raise FileNotFoundError(
             "AEO is not initialized in this repository. Run `aeo init` first."
         )
-    return json.loads(path.read_text(encoding="utf-8"))
+    config = json.loads(path.read_text(encoding="utf-8"))
+    detected = detect_project(root)
+    config.setdefault("fixes", detected.fixes)
+    config.setdefault(
+        "guardian",
+        {"blocking_severities": ["error", "blocker"], "max_text_file_bytes": 1_000_000},
+    )
+    return config

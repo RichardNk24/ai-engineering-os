@@ -13,7 +13,7 @@ from aeo.db.models import (
 )
 from aeo.domain.enums import FinalizationStatus, TaskStatus
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 
 def _ensure_schema_version(factory: sessionmaker[Session]) -> None:

@@ -12,6 +12,7 @@ from aeo.analytics.service import engineering_analytics
 from aeo.checks.runner import CheckResult, run_all_checks
 from aeo.environment.service import collect_environment
 from aeo.git.service import collect_git_context
+from aeo.guardian.service import run_guard
 from aeo.project.configuration import initialize_project, load_project_config
 from aeo.tasks.service import (
     cancel_task,
@@ -155,15 +156,80 @@ def check() -> None:
 
 
 @app.command()
+def guard(
+    fix: bool = typer.Option(
+        False,
+        "--fix",
+        help="Apply only configured deterministic safe fixes.",
+    ),
+    staged: bool = typer.Option(False, "--staged", help="Inspect only the staged diff."),
+) -> None:
+    """Inspect the change set, run quality gates, and enforce repository hygiene."""
+    try:
+        result = run_guard(current_root(), staged=staged, fix=fix)
+    except (FileNotFoundError, RuntimeError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    table = Table(title=f"AEO Repo Guardian — {result.scan_id[:8]}")
+    table.add_column("Severity")
+    table.add_column("Rule")
+    table.add_column("Location")
+    table.add_column("Finding")
+
+    severity_style = {
+        "blocker": "bold red",
+        "error": "red",
+        "warning": "yellow",
+        "info": "cyan",
+    }
+    for finding in result.findings:
+        location = finding.file_path or "—"
+        if finding.line_number is not None:
+            location = f"{location}:{finding.line_number}"
+        table.add_row(
+            f"[{severity_style[finding.severity.value]}]{finding.severity.value.upper()}[/]",
+            finding.rule_id,
+            location,
+            finding.message,
+        )
+
+    if result.findings:
+        console.print(table)
+    else:
+        console.print("[bold green]No Guardian findings.[/bold green]")
+
+    check_table = Table(title="Guardian Quality Gates")
+    check_table.add_column("Gate")
+    check_table.add_column("Status")
+    check_table.add_column("Duration")
+    for check_result in result.checks:
+        check_table.add_row(
+            check_result.name,
+            "[green]PASS[/green]" if check_result.passed else "[red]FAIL[/red]",
+            _seconds(check_result.duration_ms),
+        )
+    console.print(check_table)
+
+    if result.fixes_applied:
+        console.print(f"[green]Safe fixes applied: {result.fixes_applied}[/green]")
+    console.print(f"Guardian run: {result.run_id}")
+    console.print(f"Status: {result.status.value.upper()}")
+    raise typer.Exit(code=0 if result.status.value == "passed" else 1)
+
+
+@app.command()
 def stats() -> None:
     """Show engineering outcome, task, and quality-gate analytics."""
     metrics = engineering_analytics(current_root())
     runs = metrics["runs"]
     tasks = metrics["tasks"]
     gates = metrics["gates"]
+    guardian = metrics["guardian"]
     assert isinstance(runs, dict)
     assert isinstance(tasks, dict)
     assert isinstance(gates, dict)
+    assert isinstance(guardian, dict)
 
     summary = Table(title="AEO Engineering Analytics")
     summary.add_column("Metric")
@@ -196,6 +262,17 @@ def stats() -> None:
                 _seconds(float(values["average_duration_ms"])),
             )
         console.print(gate_table)
+
+    guard_table = Table(title="Repo Guardian Analytics")
+    guard_table.add_column("Metric")
+    guard_table.add_column("Value", justify="right")
+    guard_table.add_row("Scans", str(guardian["scans"]))
+    guard_table.add_row("Pass rate", f'{guardian["pass_rate"]:.2f}%')
+    guard_table.add_row("Blocked scans", str(guardian["blocked"]))
+    guard_table.add_row("Findings", str(guardian["findings"]))
+    guard_table.add_row("Fixed findings", str(guardian["fixed_findings"]))
+    guard_table.add_row("Fix attempts", str(guardian["fix_attempts"]))
+    console.print(guard_table)
 
 
 @task_app.command("start")

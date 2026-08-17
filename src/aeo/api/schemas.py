@@ -71,3 +71,16 @@ class TaskRead(BaseModel):
     validation_attempts: int
     validation_status: str | None
     validation_duration_ms: float | None
+
+
+class GuardScanRead(BaseModel):
+    id: str
+    run_id: str
+    scope: str
+    status: str
+    total_findings: int
+    blocking_findings: int
+    autofix_requested: bool
+    autofix_applied: bool
+    started_at: datetime
+    completed_at: datetime | None

@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from aeo.db.models import EngineeringEvent, EngineeringRun, EngineeringTask, TaskValidationAttempt
 from aeo.db.session import create_session_factory
 from aeo.domain.enums import EventType, RunStatus, TaskStatus
+from aeo.guardian.service import guard_analytics
 
 
 def _percentile(values: list[float], percentile: float) -> float:
@@ -16,6 +17,44 @@ def _percentile(values: list[float], percentile: float) -> float:
     ordered = sorted(values)
     index = max(0, math.ceil(percentile * len(ordered)) - 1)
     return round(ordered[index], 2)
+
+
+def _completed_validation_attempts(
+    session,
+    completed_tasks: list[EngineeringTask],
+) -> dict[str, list[EngineeringRun]]:
+    """
+    Return ordered validation runs for completed tasks only.
+
+    Outcome metrics intentionally exclude active/cancelled tasks because their
+    validation lifecycle is not final yet. Legacy completed tasks that predate
+    TaskValidationAttempt are recovered through validation_run_id.
+    """
+    result: dict[str, list[EngineeringRun]] = {}
+
+    for task in completed_tasks:
+        attempts = session.scalars(
+            select(TaskValidationAttempt)
+            .where(TaskValidationAttempt.task_id == task.id)
+            .order_by(TaskValidationAttempt.attempt_number)
+        ).all()
+
+        runs: list[EngineeringRun] = []
+        for attempt in attempts:
+            run = session.get(EngineeringRun, attempt.run_id)
+            if run is not None:
+                runs.append(run)
+
+        # Backwards compatibility for v0.2/v0.3 tasks.
+        if not runs and task.validation_run_id:
+            legacy_run = session.get(EngineeringRun, task.validation_run_id)
+            if legacy_run is not None:
+                runs.append(legacy_run)
+
+        if runs:
+            result[task.id] = runs
+
+    return result
 
 
 def engineering_analytics(root: Path) -> dict[str, object]:
@@ -41,45 +80,40 @@ def engineering_analytics(root: Path) -> dict[str, object]:
         ]
 
         task_total = session.scalar(select(func.count()).select_from(EngineeringTask)) or 0
-        task_completed = session.scalar(
-            select(func.count())
-            .select_from(EngineeringTask)
-            .where(EngineeringTask.status == TaskStatus.COMPLETED)
-        ) or 0
+        completed_tasks = list(
+            session.scalars(
+                select(EngineeringTask).where(
+                    EngineeringTask.status == TaskStatus.COMPLETED
+                )
+            ).all()
+        )
+        task_completed = len(completed_tasks)
         task_active = session.scalar(
             select(func.count())
             .select_from(EngineeringTask)
             .where(EngineeringTask.status == TaskStatus.ACTIVE)
         ) or 0
         task_durations = [
-            float(value)
-            for value in session.scalars(
-                select(EngineeringTask.duration_ms).where(
-                    EngineeringTask.duration_ms.is_not(None)
-                )
-            ).all()
-            if value is not None
+            float(task.duration_ms)
+            for task in completed_tasks
+            if task.duration_ms is not None
         ]
 
-        validated_task_ids = list(
-            session.scalars(select(TaskValidationAttempt.task_id).distinct()).all()
+        completed_validation_runs = _completed_validation_attempts(
+            session,
+            completed_tasks,
         )
+
+        validated_count = len(completed_validation_runs)
         first_pass_tasks = 0
         retried_tasks = 0
         total_attempts = 0
-        for task_id in validated_task_ids:
-            attempts = session.scalars(
-                select(TaskValidationAttempt)
-                .where(TaskValidationAttempt.task_id == task_id)
-                .order_by(TaskValidationAttempt.attempt_number)
-            ).all()
-            if not attempts:
-                continue
-            total_attempts += len(attempts)
-            first_run = session.get(EngineeringRun, attempts[0].run_id)
-            if first_run is not None and first_run.status == RunStatus.PASSED:
+
+        for runs in completed_validation_runs.values():
+            total_attempts += len(runs)
+            if runs[0].status == RunStatus.PASSED:
                 first_pass_tasks += 1
-            if len(attempts) > 1:
+            if len(runs) > 1:
                 retried_tasks += 1
 
         gate_rows = session.execute(
@@ -124,7 +158,6 @@ def engineering_analytics(root: Path) -> dict[str, object]:
         samples = int(gate["samples"])
         gate["pass_rate"] = round(int(gate["passed"]) / samples * 100, 2) if samples else 0.0
 
-    validated_count = len(validated_task_ids)
     return {
         "runs": {
             "total": run_total,
@@ -152,4 +185,5 @@ def engineering_analytics(root: Path) -> dict[str, object]:
             ),
         },
         "gates": gates,
+        "guardian": guard_analytics(root),
     }

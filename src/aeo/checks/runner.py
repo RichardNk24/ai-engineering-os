@@ -28,6 +28,13 @@ class CheckResult:
         return (self.stdout or self.stderr).strip()
 
 
+@dataclass(slots=True)
+class QualityRunResult:
+    run_id: str
+    status: RunStatus
+    checks: list[CheckResult]
+
+
 def execute_check(root: Path, name: str, command: str) -> CheckResult:
     started = perf_counter()
     result = subprocess.run(
@@ -50,21 +57,17 @@ def execute_check(root: Path, name: str, command: str) -> CheckResult:
     )
 
 
-def run_all_checks(root: Path) -> list[CheckResult]:
+def run_all_checks(root: Path, *, resume_run_id: str | None = None) -> QualityRunResult:
     config = load_project_config(root)
     checks: dict[str, str] = config.get("checks", {})
 
     recorder = RunRecorder(root, command="check")
-    recorder.start()
+    run = recorder.resume(resume_run_id) if resume_run_id else recorder.start()
 
     results: list[CheckResult] = []
 
     for name, command in checks.items():
-        recorder.event(
-            EventType.CHECK_STARTED,
-            stage=name,
-            message=command,
-        )
+        recorder.event(EventType.CHECK_STARTED, stage=name, message=command)
 
         result = execute_check(root, name, command)
         results.append(result)
@@ -77,8 +80,16 @@ def run_all_checks(root: Path) -> list[CheckResult]:
         )
 
     final_status = (
-        RunStatus.PASSED if all(result.passed for result in results) else RunStatus.FAILED
+        RunStatus.PASSED
+        if all(result.passed for result in results)
+        else RunStatus.FAILED
     )
     recorder.complete(final_status)
 
-    return results
+    return QualityRunResult(run_id=run.id, status=final_status, checks=results)
+
+
+def create_quality_run(root: Path) -> str:
+    """Persist a resumable quality run before executing any subprocess."""
+    recorder = RunRecorder(root, command="check")
+    return recorder.start().id

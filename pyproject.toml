@@ -1,6 +1,6 @@
 [project]
 name = "ai-engineering-os"
-version = "0.1.0"
+version = "0.3.0"
 description = "Observable AI-native engineering workflow for software teams and solo engineers."
 requires-python = ">=3.12"
 dependencies = [
@@ -11,6 +11,14 @@ dependencies = [
   "sqlalchemy>=2.0",
   "pydantic>=2.11",
   "pydantic-settings>=2.10",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "ruff>=0.12",
+  "mypy>=1.17",
+  "httpx>=0.28",
 ]
 
 [project.scripts]
@@ -29,10 +37,3 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[dependency-groups]
-dev = [
-    "mypy>=2.3.1",
-    "pytest>=9.1.1",
-    "ruff>=0.16.3",
-]

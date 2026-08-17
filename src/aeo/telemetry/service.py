@@ -6,9 +6,15 @@ from time import perf_counter
 
 from sqlalchemy import func, select
 
-from aeo.db.models import EngineeringEvent, EngineeringRun, GitSnapshot
+from aeo.db.models import (
+    EngineeringEvent,
+    EngineeringRun,
+    ExecutionEnvironment,
+    GitSnapshot,
+)
 from aeo.db.session import create_session_factory
 from aeo.domain.enums import EventType, RunStatus
+from aeo.environment.service import collect_environment
 from aeo.git.service import collect_git_context
 
 
@@ -23,6 +29,7 @@ class RunRecorder:
     def start(self) -> EngineeringRun:
         self._started_perf = perf_counter()
         git_context = collect_git_context(self.project_root)
+        environment = collect_environment(self.project_root)
 
         with self.session_factory() as session:
             run = EngineeringRun(
@@ -55,6 +62,38 @@ class RunRecorder:
                     )
                 )
 
+            session.add(
+                ExecutionEnvironment(
+                    run_id=run.id,
+                    aeo_version=environment.aeo_version,
+                    python_version=environment.python_version,
+                    implementation=environment.implementation,
+                    os_name=environment.os_name,
+                    os_release=environment.os_release,
+                    machine=environment.machine,
+                    git_version=environment.git_version,
+                )
+            )
+
+            session.commit()
+            self.run = run
+            return run
+
+    def resume(self, run_id: str) -> EngineeringRun:
+        self._started_perf = perf_counter()
+        with self.session_factory() as session:
+            run = session.get(EngineeringRun, run_id)
+            if run is None:
+                raise RuntimeError(f"Engineering run {run_id} does not exist.")
+            if run.status != RunStatus.RUNNING:
+                raise RuntimeError(f"Engineering run {run_id} is already {run.status}.")
+            session.add(
+                EngineeringEvent(
+                    run_id=run.id,
+                    event_type=EventType.RUN_RESUMED,
+                    message=f"{self.command} resumed",
+                )
+            )
             session.commit()
             self.run = run
             return run
@@ -86,26 +125,27 @@ class RunRecorder:
         if self.run is None or self._started_perf is None:
             raise RuntimeError("Run has not been started.")
 
-        duration_ms = (perf_counter() - self._started_perf) * 1000
+        elapsed_ms = (perf_counter() - self._started_perf) * 1000
 
         with self.session_factory() as session:
             run = session.get(EngineeringRun, self.run.id)
             assert run is not None
+            previous_duration = run.duration_ms or 0.0
             run.status = status
             run.completed_at = datetime.now(UTC)
-            run.duration_ms = duration_ms
+            run.duration_ms = previous_duration + elapsed_ms
             session.add(
                 EngineeringEvent(
                     run_id=run.id,
                     event_type=EventType.RUN_COMPLETED,
                     message=f"run completed with status={status}",
-                    duration_ms=duration_ms,
+                    duration_ms=run.duration_ms,
                 )
             )
             session.commit()
 
 
-def stats(project_root: Path) -> dict:
+def stats(project_root: Path) -> dict[str, int | float]:
     session_factory = create_session_factory(project_root)
 
     with session_factory() as session:
@@ -121,8 +161,9 @@ def stats(project_root: Path) -> dict:
             .where(EngineeringRun.status == RunStatus.FAILED)
         ) or 0
         avg_duration = session.scalar(
-            select(func.avg(EngineeringRun.duration_ms))
-            .where(EngineeringRun.duration_ms.is_not(None))
+            select(func.avg(EngineeringRun.duration_ms)).where(
+                EngineeringRun.duration_ms.is_not(None)
+            )
         )
 
     return {

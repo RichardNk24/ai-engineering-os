@@ -1,66 +1,92 @@
-# AI Engineering OS (AEO)
+# AI Engineering OS (AEO) — v0.3
 
-AEO is a Python-based engineering workflow layer designed to make AI-assisted
-software development measurable, reviewable, and eventually agentic.
+AEO is a Python-based engineering workflow layer for making AI-assisted software development measurable, reviewable, and progressively agentic.
 
-## V0.1 goals
+## V0.3 — Engineering Analytics & Reliability
 
-- Detect a repository
-- Initialize `.aeo/project.json`
-- Run deterministic quality checks
-- Record engineering runs
-- Record event-level telemetry
-- Report basic metrics
+V0.3 focuses on measurement integrity before autonomous agents are introduced.
 
-## Why this comes before the agents
+### Reliability
 
-The orchestrator, implementer, reviewer, repo guardian, risk engine and
-specialist agents will all emit events into the same run model.
+- Crash-safe task finalization with a persisted finalization record
+- Validation runs are linked to a task before subprocess execution
+- A completed validation is reused after a partial failure instead of duplicated
+- Failed validation keeps the task active so it can be fixed and retried
+- Every validation attempt remains queryable for first-pass and retry analytics
+- V0.2 task validation links are backfilled into the V0.3 additive schema
 
-That means we can later answer:
+### Engineering analytics
 
-- How much time did the agent actually save?
-- Which quality gate fails most often?
-- How many retries happened?
-- Where did the human intervene?
-- What did each successful change cost?
-- Do reviewer agents reduce escaped defects?
+- Task history and task detail views
+- First-pass validation success rate
+- Validation retry rate
+- Per-quality-gate pass/fail counts
+- Per-quality-gate average duration
+- Average run and task duration
 
-## Install
+### Environment observability
+
+Each new engineering run captures:
+
+- AEO version
+- Python version and implementation
+- operating system and release
+- machine architecture
+- Git version
+
+### Additive schema
+
+V0.3 does not modify existing V0.2 table columns. It adds:
+
+- `execution_environments`
+- `task_finalizations`
+- `task_validation_attempts`
+
+This allows an existing `.aeo/aeo.db` to be reused.
+
+## Install / upgrade
 
 ```bash
-uv sync --extra dev
+python -m uv sync --extra dev
 ```
 
-or:
+Keep your existing `.aeo/aeo.db` if you are upgrading from V0.2.x.
+
+## Core workflow
 
 ```bash
-pip install -e ".[dev]"
+python -m uv run aeo doctor
+python -m uv run aeo task start "Implement feature X"
+# work...
+python -m uv run aeo task finish
+python -m uv run aeo task history
+python -m uv run aeo stats
 ```
 
-## CLI
+If validation fails, the task remains active. Fix the reported issue and run `task finish` again; AEO records a new validation attempt.
+
+## Task inspection
 
 ```bash
-aeo init
-aeo doctor
-aeo check
-aeo stats
+python -m uv run aeo task history
+python -m uv run aeo task show <TASK_ID>
 ```
-
-## Development status
-
-Current milestone: v0.2 — Git-aware engineering telemetry.
 
 ## API
 
 ```bash
-uvicorn aeo.api.main:app --reload
+python -m uv run uvicorn aeo.api.main:app --reload --port 8009
 ```
 
-Open:
+Endpoints:
 
-- http://127.0.0.1:8000/docs
-- http://127.0.0.1:8000/health
-- http://127.0.0.1:8000/runs
-- http://127.0.0.1:8000/stats
-```
+- `GET /health`
+- `GET /runs`
+- `GET /tasks`
+- `GET /tasks/{task_id}`
+- `GET /stats`
+- `GET /docs`
+
+## Roadmap
+
+V0.4 is planned as the first Repo Guardian layer: deterministic repository intelligence and automated remediation around the quality system built in V0.1–V0.3.

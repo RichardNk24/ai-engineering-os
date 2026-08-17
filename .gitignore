@@ -4,5 +4,11 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 *.pyc
+
 .aeo/aeo.db
+
+.env
+.env.*
+!.env.example
+
 dist/

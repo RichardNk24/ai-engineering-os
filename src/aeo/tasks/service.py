@@ -7,7 +7,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from aeo.checks.runner import run_all_checks
-from aeo.db.models import EngineeringTask
+from aeo.db.models import EngineeringRun, EngineeringTask
 from aeo.db.session import create_session_factory
 from aeo.domain.enums import TaskStatus
 from aeo.git.service import collect_git_context
@@ -27,6 +27,13 @@ class TaskSummary:
     insertions: int
     deletions: int
     validation_run_id: str | None
+
+
+def _as_utc(value: datetime) -> datetime:
+    """Normalize timestamps read from SQLite to timezone-aware UTC."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _to_summary(task: EngineeringTask) -> TaskSummary:
@@ -96,10 +103,9 @@ def finish_task(root: Path, *, run_validation: bool = True) -> TaskSummary:
             raise RuntimeError("No active AEO task found.")
 
         validation_run_id: str | None = None
+
         if run_validation:
-            results = run_all_checks(root)
-            # The check runner records exactly one run. Resolve the latest check run.
-            from aeo.db.models import EngineeringRun
+            run_all_checks(root)
 
             latest_run = session.scalar(
                 select(EngineeringRun)
@@ -109,15 +115,13 @@ def finish_task(root: Path, *, run_validation: bool = True) -> TaskSummary:
             if latest_run is not None:
                 validation_run_id = latest_run.id
 
-            # Explicitly keep result evaluation here for future policy hooks.
-            _ = all(result.passed for result in results)
-
         git_context = collect_git_context(root)
         completed_at = datetime.now(UTC)
+        started_at = _as_utc(task.started_at)
 
         task.status = TaskStatus.COMPLETED
         task.completed_at = completed_at
-        task.duration_ms = (completed_at - task.started_at).total_seconds() * 1000
+        task.duration_ms = (completed_at - started_at).total_seconds() * 1000
         task.end_branch = git_context.branch
         task.end_commit_sha = git_context.commit_sha
         task.changed_files = git_context.changed_files
@@ -143,8 +147,10 @@ def cancel_task(root: Path) -> TaskSummary:
             raise RuntimeError("No active AEO task found.")
 
         completed_at = datetime.now(UTC)
+        started_at = _as_utc(task.started_at)
+
         task.status = TaskStatus.CANCELLED
         task.completed_at = completed_at
-        task.duration_ms = (completed_at - task.started_at).total_seconds() * 1000
+        task.duration_ms = (completed_at - started_at).total_seconds() * 1000
         session.commit()
         return _to_summary(task)

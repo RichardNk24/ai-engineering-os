@@ -47,6 +47,10 @@ aeo check
 aeo stats
 ```
 
+## Development status
+
+Current milestone: v0.2 — Git-aware engineering telemetry.
+
 ## API
 
 ```bash

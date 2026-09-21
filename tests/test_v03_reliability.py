@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select
 
+from aeo import __version__
 from aeo.checks.runner import create_quality_run, run_all_checks
 from aeo.db.models import (
     EngineeringRun,
@@ -106,7 +107,7 @@ def test_run_captures_execution_environment(tmp_path: Path) -> None:
         )
 
     assert environment is not None
-    assert environment.aeo_version == "0.3.0"
+    assert environment.aeo_version == __version__
     assert environment.python_version
     assert environment.os_name
 
@@ -159,4 +160,4 @@ def test_schema_version_is_persisted(tmp_path: Path) -> None:
         metadata = session.get(AeoSchemaMetadata, 1)
 
     assert metadata is not None
-    assert metadata.schema_version == 3
+    assert metadata.schema_version == 5

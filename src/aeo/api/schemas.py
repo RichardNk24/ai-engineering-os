@@ -71,3 +71,39 @@ class TaskRead(BaseModel):
     validation_attempts: int
     validation_status: str | None
     validation_duration_ms: float | None
+
+
+class GuardScanRead(BaseModel):
+    id: str
+    run_id: str
+    scope: str
+    status: str
+    total_findings: int
+    blocking_findings: int
+    autofix_requested: bool
+    autofix_applied: bool
+    started_at: datetime
+    completed_at: datetime | None
+
+
+class AiReviewSummaryRead(BaseModel):
+    id: str
+    run_id: str
+    scope: str
+    status: str
+    provider: str
+    model: str
+    mode: str
+    risk_score: float
+    risk_level: str
+    candidate_findings: int
+    confirmed_findings: int
+    rejected_findings: int
+    uncertain_findings: int
+    unverified_findings: int
+    evidence_invalid_findings: int
+    input_tokens: int
+    output_tokens: int
+    estimated_cost_usd: float | None
+    started_at: datetime
+    completed_at: datetime | None

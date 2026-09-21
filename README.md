@@ -1,76 +1,42 @@
-# AI Engineering OS (AEO) — v0.3
+# AI Engineering OS (AEO) — v0.4
 
-AEO is a Python-based engineering workflow layer for making AI-assisted software development measurable, reviewable, and progressively agentic.
+AEO is an observable, risk-aware engineering workflow for AI-assisted software development.
 
-## V0.3 — Engineering Analytics & Reliability
+## V0.4 — Repo Guardian
 
-V0.3 focuses on measurement integrity before autonomous agents are introduced.
-
-### Reliability
-
-- Crash-safe task finalization with a persisted finalization record
-- Validation runs are linked to a task before subprocess execution
-- A completed validation is reused after a partial failure instead of duplicated
-- Failed validation keeps the task active so it can be fixed and retried
-- Every validation attempt remains queryable for first-pass and retry analytics
-- V0.2 task validation links are backfilled into the V0.3 additive schema
-
-### Engineering analytics
-
-- Task history and task detail views
-- First-pass validation success rate
-- Validation retry rate
-- Per-quality-gate pass/fail counts
-- Per-quality-gate average duration
-- Average run and task duration
-
-### Environment observability
-
-Each new engineering run captures:
-
-- AEO version
-- Python version and implementation
-- operating system and release
-- machine architecture
-- Git version
-
-### Additive schema
-
-V0.3 does not modify existing V0.2 table columns. It adds:
-
-- `execution_environments`
-- `task_finalizations`
-- `task_validation_attempts`
-
-This allows an existing `.aeo/aeo.db` to be reused.
-
-## Install / upgrade
+V0.4 introduces the first active engineering protection layer. Guardian is deterministic and
+read-only by default. It inspects the current Git change set, runs configured quality gates,
+classifies findings, records telemetry, and can apply only explicitly configured safe fixes.
 
 ```bash
-python -m uv sync --extra dev
-```
-
-Keep your existing `.aeo/aeo.db` if you are upgrading from V0.2.x.
-
-## Core workflow
-
-```bash
-python -m uv run aeo doctor
-python -m uv run aeo task start "Implement feature X"
-# work...
-python -m uv run aeo task finish
-python -m uv run aeo task history
+python -m uv run aeo guard
+python -m uv run aeo guard --staged
+python -m uv run aeo guard --fix
 python -m uv run aeo stats
 ```
 
-If validation fails, the task remains active. Fix the reported issue and run `task finish` again; AEO records a new validation attempt.
+Guardian currently detects high-confidence issues including:
 
-## Task inspection
+- private-key material and AWS access-key patterns in changed lines
+- `.env` files entering a change set
+- unresolved merge-conflict markers
+- Python breakpoints / `pdb.set_trace()`
+- JavaScript/TypeScript `debugger;`
+- cache/generated artifacts such as `__pycache__`, `.pyc`, `.pytest_cache`, `.mypy_cache`
+- source changes without accompanying test-file changes (informational)
+- very large file-count change sets (warning)
 
-```bash
-python -m uv run aeo task history
-python -m uv run aeo task show <TASK_ID>
+### Safe autofix policy
+
+`aeo guard` never edits code by default. `aeo guard --fix` may execute only commands listed
+under `fixes` in `.aeo/project.json`. Python projects detected with Ruff receive:
+
+```json
+{"fixes": {"lint": "ruff check . --fix"}}
 ```
+
+Security findings, merge conflicts, secrets, debuggers, and repository-hygiene findings are
+never silently rewritten.
 
 ## API
 
@@ -78,15 +44,21 @@ python -m uv run aeo task show <TASK_ID>
 python -m uv run uvicorn aeo.api.main:app --reload --port 8009
 ```
 
-Endpoints:
+Relevant endpoints include `/runs`, `/tasks`, `/stats`, and `/guard/scans`.
 
-- `GET /health`
-- `GET /runs`
-- `GET /tasks`
-- `GET /tasks/{task_id}`
-- `GET /stats`
-- `GET /docs`
 
-## Roadmap
+## V0.5 — Evidence-Backed AI Reviewer
 
-V0.4 is planned as the first Repo Guardian layer: deterministic repository intelligence and automated remediation around the quality system built in V0.1–V0.3.
+AEO now includes a model-powered reviewer designed around evidence and falsification rather than raw LLM comments.
+
+```powershell
+python -m uv sync --extra dev --extra ai
+python -m uv run aeo review --dry-run
+python -m uv run aeo review
+python -m uv run aeo review --deep
+python -m uv run aeo reviews
+```
+
+The reviewer uses structured output, local line/diff evidence validation, deterministic sensitive-content preflight, risk-aware skeptical verification, and token/latency/cost telemetry. Raw prompts and source-code context are not persisted in the AEO database.
+
+See `docs/AI_REVIEWER_ARCHITECTURE.md` and `docs/adr/005-evidence-backed-ai-reviewer.md`.

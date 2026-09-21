@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "model": null,
+  "max_context_bytes": 60000,
+  "max_file_bytes": 30000,
+  "max_edits": 12,
+  "max_output_tokens": 8000,
+  "input_per_million_usd": null,
+  "output_per_million_usd": null,
+  "gates": [
+    {"name": "ruff", "argv": ["{python}", "-m", "ruff", "check", "."], "timeout_seconds": 60},
+    {"name": "tests", "argv": ["{python}", "-m", "pytest", "-q"], "timeout_seconds": 120}
+  ]
+}

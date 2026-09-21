@@ -7,10 +7,11 @@ from sqlalchemy.orm import selectinload
 
 from aeo import __version__
 from aeo.analytics.service import engineering_analytics
-from aeo.api.schemas import GuardScanRead, RunRead, TaskRead
+from aeo.api.schemas import AiReviewSummaryRead, GuardScanRead, RunRead, TaskRead
 from aeo.db.models import EngineeringRun
 from aeo.db.session import create_session_factory
 from aeo.guardian.service import list_guard_scans
+from aeo.reviewer.service import list_reviews
 from aeo.tasks.service import get_task, list_tasks
 
 app = FastAPI(
@@ -26,18 +27,12 @@ def project_root() -> Path:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {
-        "status": "ok",
-        "version": __version__,
-    }
+    return {"status": "ok", "version": __version__}
 
 
 @app.get("/runs", response_model=list[RunRead])
-def list_runs(
-    limit: int = Query(default=50, ge=1, le=500),
-) -> list[EngineeringRun]:
+def list_runs(limit: int = Query(default=50, ge=1, le=500)) -> list[EngineeringRun]:
     session_factory = create_session_factory(project_root())
-
     with session_factory() as session:
         rows = session.scalars(
             select(EngineeringRun)
@@ -49,42 +44,22 @@ def list_runs(
             .order_by(EngineeringRun.started_at.desc())
             .limit(limit)
         ).all()
-
         return list(rows)
 
 
 @app.get("/tasks", response_model=list[TaskRead])
-def tasks(
-    limit: int = Query(default=50, ge=1, le=500),
-) -> list[TaskRead]:
-    return [
-        TaskRead(**asdict(task))
-        for task in list_tasks(
-            project_root(),
-            limit=limit,
-        )
-    ]
+def tasks(limit: int = Query(default=50, ge=1, le=500)) -> list[TaskRead]:
+    return [TaskRead(**asdict(task)) for task in list_tasks(project_root(), limit=limit)]
 
 
 @app.get("/tasks/{task_id}", response_model=TaskRead)
 def task_detail(task_id: str) -> TaskRead:
     try:
-        task = get_task(
-            project_root(),
-            task_id,
-        )
+        task = get_task(project_root(), task_id)
     except RuntimeError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        ) from exc
-
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if task is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Engineering task not found",
-        )
-
+        raise HTTPException(status_code=404, detail="Engineering task not found")
     return TaskRead(**asdict(task))
 
 
@@ -94,13 +69,13 @@ def stats() -> dict[str, object]:
 
 
 @app.get("/guard/scans", response_model=list[GuardScanRead])
-def guard_scans(
-    limit: int = Query(default=50, ge=1, le=500),
-) -> list[GuardScanRead]:
+def guard_scans(limit: int = Query(default=50, ge=1, le=500)) -> list[GuardScanRead]:
+    return [GuardScanRead(**asdict(scan)) for scan in list_guard_scans(project_root(), limit=limit)]
+
+
+@app.get("/reviews", response_model=list[AiReviewSummaryRead])
+def reviews(limit: int = Query(default=50, ge=1, le=500)) -> list[AiReviewSummaryRead]:
     return [
-        GuardScanRead(**asdict(scan))
-        for scan in list_guard_scans(
-            project_root(),
-            limit=limit,
-        )
+        AiReviewSummaryRead(**asdict(review))
+        for review in list_reviews(project_root(), limit=limit)
     ]

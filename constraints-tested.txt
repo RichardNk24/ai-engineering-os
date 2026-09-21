@@ -1,0 +1,11 @@
+# Versions directes testees ; utiliser avec pip -c si souhaite.
+fastapi==0.141.1
+starlette==1.6.0
+typer==0.27.2
+rich==14.3.4
+pydantic==2.13.5
+uvicorn==0.53.0
+openai==2.54.0
+pytest==9.1.1
+httpx==0.28.1
+ruff==0.16.8

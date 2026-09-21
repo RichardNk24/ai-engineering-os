@@ -14,6 +14,7 @@ from aeo.environment.service import collect_environment
 from aeo.git.service import collect_git_context
 from aeo.guardian.service import run_guard
 from aeo.project.configuration import initialize_project, load_project_config
+from aeo.reviewer.service import list_reviews, run_review
 from aeo.tasks.service import (
     cancel_task,
     finish_task,
@@ -24,12 +25,15 @@ from aeo.tasks.service import (
     start_task,
 )
 
+from aeo_workbench.cli import app as workbench_app
+
 app = typer.Typer(
     name="aeo",
     help="AI Engineering OS — measurable, risk-aware engineering automation.",
 )
 task_app = typer.Typer(help="Track engineering tasks and development cycles.")
 app.add_typer(task_app, name="task")
+app.add_typer(workbench_app, name="workbench")
 console = Console()
 
 
@@ -194,6 +198,16 @@ def guard(
             finding.message,
         )
 
+    console.print(Panel(result.summary, title="Review Summary"))
+
+    if result.test_recommendations:
+        recommendations = "\n".join(f"• {item}" for item in result.test_recommendations)
+        console.print(Panel(recommendations, title="Recommended Tests"))
+
+    if result.uncertainties:
+        uncertainties = "\n".join(f"• {item}" for item in result.uncertainties)
+        console.print(Panel(uncertainties, title="Reviewer Uncertainties"))
+
     if result.findings:
         console.print(table)
     else:
@@ -219,6 +233,128 @@ def guard(
 
 
 @app.command()
+def review(
+    staged: bool = typer.Option(False, "--staged", help="Review only the staged diff."),
+    deep: bool = typer.Option(
+        False,
+        "--deep",
+        help="Force deep verification of all valid findings.",
+    ),
+    verify: bool = typer.Option(True, "--verify/--no-verify", help="Run skeptical verification."),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Build and measure review context without invoking a model.",
+    ),
+    provider: str | None = typer.Option(None, "--provider", help="Review provider override."),
+    model: str | None = typer.Option(None, "--model", help="Primary review model override."),
+) -> None:
+    """Run evidence-backed adversarial AI review over the current change set."""
+    try:
+        result = run_review(
+            current_root(),
+            staged=staged,
+            deep=deep,
+            verify=verify,
+            dry_run=dry_run,
+            provider_name=provider,
+            model=model,
+        )
+    except (FileNotFoundError, RuntimeError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    console.print(
+        Panel.fit(
+            "\n".join(
+                [
+                    f"Review: {result.review_id}",
+                    f"Provider: {result.provider}",
+                    f"Model: {result.model}",
+                    f"Mode: {result.mode}",
+                    f"Risk: {result.risk_score}/10 ({result.risk_level})",
+                    f"Changed files: {result.changed_files}",
+                    f"Omitted files: {result.omitted_files}",
+                    f"Context: {result.context_chars:,} chars",
+                ]
+            ),
+            title="AEO AI Reviewer",
+        )
+    )
+
+    if result.findings:
+        table = Table(title="Evidence-backed Review Findings")
+        table.add_column("Severity")
+        table.add_column("Status")
+        table.add_column("Location")
+        table.add_column("Finding")
+        table.add_column("Confidence", justify="right")
+        for finding in result.findings:
+            table.add_row(
+                finding.severity.upper(),
+                finding.status,
+                (
+                    f"{finding.file_path}:"
+                    f"{'D' if finding.evidence_source == 'diff' else 'L'}"
+                    f"{finding.line_start}-{finding.line_end}"
+                ),
+                finding.title,
+                f"{finding.confidence:.2f}",
+            )
+        console.print(table)
+    elif result.status != "dry_run":
+        console.print("[bold green]No AI review findings.[/bold green]")
+
+    usage = Table(title="AI Review Telemetry")
+    usage.add_column("Metric")
+    usage.add_column("Value", justify="right")
+    usage.add_row("Input tokens", str(result.input_tokens))
+    usage.add_row("Output tokens", str(result.output_tokens))
+    usage.add_row(
+        "Estimated cost",
+        (
+            f"${result.estimated_cost_usd:.6f}"
+            if result.estimated_cost_usd is not None
+            else "not configured"
+        ),
+    )
+    usage.add_row("Status", result.status.upper())
+    console.print(usage)
+    console.print(f"Engineering run: {result.run_id}")
+
+    raise typer.Exit(code=1 if result.status == "blocked" else 0)
+
+
+@app.command()
+def reviews(limit: int = typer.Option(20, min=1, max=200)) -> None:
+    """Show recent AI review runs and their verification outcomes."""
+    rows = list_reviews(current_root(), limit=limit)
+    table = Table(title="AEO AI Review History")
+    table.add_column("ID")
+    table.add_column("Status")
+    table.add_column("Risk")
+    table.add_column("Mode")
+    table.add_column("Model")
+    table.add_column("Findings", justify="right")
+    table.add_column("Confirmed", justify="right")
+    table.add_column("Rejected", justify="right")
+    table.add_column("Tokens", justify="right")
+    for row in rows:
+        table.add_row(
+            row.id[:8],
+            row.status,
+            f"{row.risk_score:.2f}/{row.risk_level}",
+            row.mode,
+            row.model,
+            str(row.candidate_findings),
+            str(row.confirmed_findings),
+            str(row.rejected_findings),
+            str(row.input_tokens + row.output_tokens),
+        )
+    console.print(table)
+
+
+@app.command()
 def stats() -> None:
     """Show engineering outcome, task, and quality-gate analytics."""
     metrics = engineering_analytics(current_root())
@@ -226,10 +362,12 @@ def stats() -> None:
     tasks = metrics["tasks"]
     gates = metrics["gates"]
     guardian = metrics["guardian"]
+    reviewer = metrics["reviewer"]
     assert isinstance(runs, dict)
     assert isinstance(tasks, dict)
     assert isinstance(gates, dict)
     assert isinstance(guardian, dict)
+    assert isinstance(reviewer, dict)
 
     summary = Table(title="AEO Engineering Analytics")
     summary.add_column("Metric")
@@ -273,6 +411,29 @@ def stats() -> None:
     guard_table.add_row("Fixed findings", str(guardian["fixed_findings"]))
     guard_table.add_row("Fix attempts", str(guardian["fix_attempts"]))
     console.print(guard_table)
+
+    review_table = Table(title="AI Reviewer Analytics")
+    review_table.add_column("Metric")
+    review_table.add_column("Value", justify="right")
+    review_table.add_row("Reviews", str(reviewer["reviews"]))
+    review_table.add_row("Pass rate", f'{reviewer["pass_rate"]:.2f}%')
+    review_table.add_row("Blocked", str(reviewer["blocked"]))
+    review_table.add_row("Findings", str(reviewer["findings"]))
+    review_table.add_row("Confirmed", str(reviewer["confirmed"]))
+    review_table.add_row("Rejected by verifier", str(reviewer["rejected"]))
+    review_table.add_row("Uncertain", str(reviewer["uncertain"]))
+    review_table.add_row("Unverified", str(reviewer["unverified"]))
+    review_table.add_row("Evidence invalid", str(reviewer["evidence_invalid"]))
+    review_table.add_row(
+        "Verifier rejection rate", f'{reviewer["verifier_rejection_rate"]:.2f}%'
+    )
+    review_table.add_row("Input tokens", str(reviewer["input_tokens"]))
+    review_table.add_row("Output tokens", str(reviewer["output_tokens"]))
+    review_table.add_row("Estimated cost", f'${reviewer["estimated_cost_usd"]:.6f}')
+    review_table.add_row(
+        "Avg primary latency", _seconds(float(reviewer["average_primary_latency_ms"]))
+    )
+    console.print(review_table)
 
 
 @task_app.command("start")

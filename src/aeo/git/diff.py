@@ -18,6 +18,7 @@ class DiffSnapshot:
     files: list[str]
     changed_lines: list[ChangedLine]
     untracked_files: list[str]
+    raw_diff: str = ""
 
 
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
@@ -117,4 +118,5 @@ def collect_diff(
         files=files,
         changed_lines=lines,
         untracked_files=untracked,
+        raw_diff=result.stdout,
     )

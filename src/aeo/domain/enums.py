@@ -53,4 +53,31 @@ class EventType(StrEnum):
     GUARD_FIX_STARTED = "guard_fix_started"
     GUARD_FIX_COMPLETED = "guard_fix_completed"
     GUARD_SCAN_COMPLETED = "guard_scan_completed"
+    REVIEW_STARTED = "review_started"
+    REVIEW_CONTEXT_BUILT = "review_context_built"
+    REVIEW_MODEL_CALL = "review_model_call"
+    REVIEW_FINDING = "review_finding"
+    REVIEW_VERIFICATION = "review_verification"
+    REVIEW_COMPLETED = "review_completed"
     RUN_COMPLETED = "run_completed"
+
+
+class ReviewStatus(StrEnum):
+    RUNNING = "running"
+    PASSED = "passed"
+    BLOCKED = "blocked"
+    FAILED = "failed"
+    DRY_RUN = "dry_run"
+
+
+class ReviewMode(StrEnum):
+    STANDARD = "standard"
+    DEEP = "deep"
+
+
+class ReviewFindingStatus(StrEnum):
+    UNVERIFIED = "unverified"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+    UNCERTAIN = "uncertain"
+    EVIDENCE_INVALID = "evidence_invalid"

@@ -23,6 +23,21 @@ def initialize_project(root: Path) -> dict:
             "blocking_severities": ["error", "blocker"],
             "max_text_file_bytes": 1_000_000,
         },
+        "reviewer": {
+            "provider": "openai",
+            "model": "gpt-5.6",
+            "verification_model": "gpt-5.6",
+            "max_context_chars": 80_000,
+            "max_files": 25,
+            "max_output_tokens": 5000,
+            "deep_review_risk_threshold": 6.0,
+            "min_confidence": 0.55,
+            "policy_files": [],
+            "pricing": {
+                "input_per_million_usd": None,
+                "output_per_million_usd": None,
+            },
+        },
         "autonomy": {"default_level": 2, "max_level": 3},
     }
     aeo_dir(root).mkdir(parents=True, exist_ok=True)
@@ -42,5 +57,23 @@ def load_project_config(root: Path) -> dict:
     config.setdefault(
         "guardian",
         {"blocking_severities": ["error", "blocker"], "max_text_file_bytes": 1_000_000},
+    )
+    config.setdefault(
+        "reviewer",
+        {
+            "provider": "openai",
+            "model": "gpt-5.6",
+            "verification_model": "gpt-5.6",
+            "max_context_chars": 80_000,
+            "max_files": 25,
+            "max_output_tokens": 5000,
+            "deep_review_risk_threshold": 6.0,
+            "min_confidence": 0.55,
+            "policy_files": [],
+            "pricing": {
+                "input_per_million_usd": None,
+                "output_per_million_usd": None,
+            },
+        },
     )
     return config

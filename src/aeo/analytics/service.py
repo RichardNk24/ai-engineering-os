@@ -9,6 +9,7 @@ from aeo.db.models import EngineeringEvent, EngineeringRun, EngineeringTask, Tas
 from aeo.db.session import create_session_factory
 from aeo.domain.enums import EventType, RunStatus, TaskStatus
 from aeo.guardian.service import guard_analytics
+from aeo.reviewer.service import review_analytics
 
 
 def _percentile(values: list[float], percentile: float) -> float:
@@ -186,4 +187,5 @@ def engineering_analytics(root: Path) -> dict[str, object]:
         },
         "gates": gates,
         "guardian": guard_analytics(root),
+        "reviewer": review_analytics(root),
     }

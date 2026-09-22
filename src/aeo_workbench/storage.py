@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .gitops import git
 from .models import Settings
-from .safety import WorkbenchError
+from .safety import WorkbenchError, redact
 
 
 def now() -> str:
@@ -69,7 +69,7 @@ def save(root: Path, run: dict) -> None:
     with connection(root) as db:
         db.execute(
             "INSERT INTO runs VALUES (?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
-            (run["id"], json.dumps(run)),
+            (run["id"], json.dumps(redact(run))),
         )
         db.execute(
             "INSERT INTO events(run_id,at,state) VALUES (?,?,?)",
@@ -83,13 +83,13 @@ def get(root: Path, run_id: str) -> dict:
         row = db.execute("SELECT data FROM runs WHERE id=?", (run_id,)).fetchone()
     if not row:
         raise WorkbenchError("Run not found.")
-    return json.loads(row["data"])
+    return redact(json.loads(row["data"]))
 
 
 def history(root: Path, limit: int = 20) -> list[dict]:
     with connection(root) as db:
         rows = db.execute("SELECT data FROM runs ORDER BY rowid DESC LIMIT ?", (limit,)).fetchall()
-    return [json.loads(row["data"]) for row in rows]
+    return [redact(json.loads(row["data"])) for row in rows]
 
 
 def events(root: Path, run_id: str) -> list[dict]:

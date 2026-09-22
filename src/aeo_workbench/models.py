@@ -1,10 +1,11 @@
+import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class Contract(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", validate_assignment=True, hide_input_in_errors=True)
 
 
 class Edit(Contract):
@@ -28,6 +29,9 @@ class Gate(Contract):
 
 class Settings(Contract):
     schema_version: Literal[1] = 1
+    require_pipeline: bool = True
+    review_model: str | None = None
+    bridge_timeout_seconds: int = Field(default=600, ge=10, le=3600)
     model: str | None = None
     max_context_bytes: int = Field(default=60_000, ge=100, le=500_000)
     max_file_bytes: int = Field(default=30_000, ge=100, le=200_000)
@@ -36,6 +40,16 @@ class Settings(Contract):
     input_per_million_usd: float | None = Field(default=None, ge=0)
     output_per_million_usd: float | None = Field(default=None, ge=0)
     gates: list[Gate] = Field(default_factory=list)
+
+    @field_validator("model", "review_model")
+    @classmethod
+    def model_identifier(cls, value: str | None) -> str | None:
+        if value is not None and (
+            value.lower().startswith("sk-")
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}", value)
+        ):
+            raise ValueError("Expected a model identifier, never an API key.")
+        return value
 
 
 class Usage(Contract):

@@ -45,6 +45,15 @@ def create_router(root: Path, token: str) -> APIRouter:
         except WorkbenchError as exc:
             raise HTTPException(404, "Run not found") from exc
 
+    @router.get("/runs/{run_id}/report")
+    def report(run_id: str):
+        from .report import build_report
+
+        try:
+            return build_report(root, run_id)
+        except WorkbenchError as exc:
+            raise HTTPException(404, "Run not found") from exc
+
     return router
 
 

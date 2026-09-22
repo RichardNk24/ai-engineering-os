@@ -36,6 +36,7 @@ def repo(tmp_path):
 def set_gates(root, gates):
     cfg = storage.config(root)
     cfg.gates = gates
+    cfg.require_pipeline = False
     storage.initialize(root).write_text(cfg.model_dump_json())
 
 

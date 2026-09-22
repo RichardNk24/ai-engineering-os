@@ -73,6 +73,7 @@ def prepare(
         rd.mkdir(parents=True, mode=0o700)
         run = {
             "id": run_id,
+            "pipeline_required": cfg.require_pipeline,
             "status": "planning",
             "created_at": storage.now(),
             "base": base,
@@ -142,6 +143,7 @@ def prepare(
 
 
 def validate_proposal(proposal: Proposal, packet: dict, cfg: Settings) -> None:
+    inspect_text(proposal.model_dump_json())
     names = [edit.path for edit in proposal.edits]
     if len(names) != len({p.casefold() for p in names}) or len(names) > cfg.max_edits:
         raise WorkbenchError("Duplicate paths or edit limit exceeded.")
@@ -169,20 +171,23 @@ def check_artifact(root: Path, run: dict) -> bytes:
     if head(wt) != run["base"]:
         raise WorkbenchError("Worktree HEAD changed; proposal is stale.")
     current = git(wt, "diff", "HEAD", "--binary", "--no-ext-diff", "--no-textconv", binary=True)
-    if current != patch or git(wt, "ls-files", "--others", "--exclude-standard"):
+    staged = git(
+        wt, "diff", "--cached", "HEAD", "--binary", "--no-ext-diff", "--no-textconv", binary=True
+    )
+    if current != patch or staged != patch or git(wt, "ls-files", "--others", "--exclude-standard"):
         raise WorkbenchError("Worktree changed outside the proposal; create a new proposal.")
     return patch
 
 
-def execute_gate(wt: Path, gate, log: Path) -> dict:
+def execute_gate(wt: Path, gate, log: Path, *, extra_env: dict | None = None) -> dict:
     argv = [sys.executable if arg == "{python}" else arg for arg in gate.argv]
     env = {
         k: v
         for k, v in os.environ.items()
-        if k
+        if k.upper()
         in {
             "PATH",
-            "SystemRoot",
+            "SYSTEMROOT",
             "WINDIR",
             "TEMP",
             "TMP",
@@ -193,9 +198,12 @@ def execute_gate(wt: Path, gate, log: Path) -> dict:
             "VIRTUAL_ENV",
         }
     }
+    env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
     env.update(
         NO_COLOR="1", PYTHONUNBUFFERED="1", PYTHONPATH=os.pathsep.join([str(wt / "src"), str(wt)])
     )
+    if extra_env:
+        env.update(extra_env)
     start = time.monotonic()
     status, returncode = "failed", None
     with log.open("wb") as stream:
@@ -289,6 +297,9 @@ def accept(root: Path, run_id: str) -> dict:
         )
         if current_gates != run["gate_config_sha256"]:
             raise WorkbenchError("Gate configuration changed; validate again.")
+        from .pipeline import assert_acceptance
+
+        assert_acceptance(root, run, cfg)
         check_artifact(root, run)
         clean(root)
         if head(root) != run["base"]:

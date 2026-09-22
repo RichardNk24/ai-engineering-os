@@ -10,7 +10,8 @@ from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
 
-from .safety import display_safe
+from . import __version__
+from .safety import display_safe, redact
 
 THEME = Theme(
     {
@@ -44,14 +45,14 @@ class UI:
         self.ascii = plain or os.environ.get("AEO_ASCII") == "1"
 
     def text(self, value, style="ink"):
-        return Text(display_safe(value), style=style)
+        return Text(display_safe(redact(value)), style=style)
 
     def header(self, section="CONTROL ROOM"):
         if self.json_mode:
             return
         mark = "<>" if self.ascii else "◈"
         title = Text.assemble((f"{mark}  A E O", "brand"), ("   /   WORKBENCH", "ink"))
-        meta = self.text(f"0.6.0  ·  {section}  ·  AI ENGINEERING OS", "muted")
+        meta = self.text(f"{__version__}  ·  {section}  ·  AI ENGINEERING OS", "muted")
         self.console.print()
         self.console.print(
             Panel(
@@ -75,7 +76,7 @@ class UI:
         )
 
     def emit(self, data):
-        self.console.print_json(data=data, indent=2)
+        self.console.print_json(data=redact(data), indent=2)
 
     def busy(self, label):
         if self.json_mode or not self.console.is_terminal:
@@ -158,16 +159,99 @@ class UI:
         if run.get("error"):
             self.panel("DETAIL", run["error"], "bad")
         next_step = {
-            "proposed": f"aeo6 show {run['id']} --diff\naeo6 validate {run['id']} --trust-code",
-            "validated": f"aeo6 accept {run['id']}",
+            "proposed": f"aeo workbench show {run['id']} --diff\naeo workbench pipeline {run['id']} --trust-code --allow-remote",
+            "validated": f"aeo workbench accept {run['id']}",
             "accepted": "git diff --cached\nReview, then commit when ready.",
             "validation_failed": "Inspect local gate logs and the proposed code. No source changes applied.",
             "dry_run": "Context checked locally. No model call and no worktree created.",
-        }.get(status, "aeo6 runs")
+        }.get(status, "aeo workbench runs")
+        if status == "validated" and run.get("pipeline_required"):
+            next_step = f"aeo workbench report {run['id']}"
         self.panel("NEXT ACTION", next_step)
         self.console.print(
             self.text("  HUMAN AUTHORITY  /  Local evidence. Explicit acceptance.\n", "muted")
         )
+
+    def report(self, data):
+        if self.json_mode:
+            self.emit(data)
+            return
+        self.header("DECISION / " + data["run_id"])
+        ready = data["ready_to_accept"]
+        self.panel(
+            "READY FOR YOUR DECISION" if ready else "ACCEPTANCE BLOCKED",
+            "Evidence is current. Acceptance still requires your command."
+            if ready
+            else "\n".join(data["blocking_reasons"]),
+            "good" if ready else "warn",
+        )
+        proof = data.get("pipeline") or {}
+        if proof.get("fixture"):
+            self.panel("OFFLINE FIXTURE", "Simulated Guardian/reviewer. No AI call. Cannot accept.")
+        rows = [
+            ("TEST / " + g["name"], g["status"], f"{g['duration_ms'] / 1000:.2f}s")
+            for g in data["gates"]
+        ]
+        for stage in proof.get("stages", []):
+            if stage["name"] != "gates":
+                rows.append(
+                    (
+                        stage["name"].upper(),
+                        stage["status"],
+                        f"{stage.get('duration_ms', 0) / 1000:.2f}s",
+                    )
+                )
+        self.table(["EVIDENCE", "RESULT", "TIME"], rows)
+        self.table(
+            ["IDENTITY", "VALUE"],
+            [
+                ("BASE", data["base"][:12]),
+                ("PATCH SHA256", data.get("patch_sha256") or "pending"),
+                ("ATTEMPT", proof.get("attempt", "none")),
+            ],
+        )
+        for stage in proof.get("stages", []):
+            if stage.get("summary"):
+                self.panel(stage["name"].upper() + " / SUMMARY", stage["summary"])
+            if stage.get("findings"):
+                self.table(
+                    ["SEVERITY", "LOCATION", "FINDING"],
+                    [
+                        (
+                            f.get("severity", ""),
+                            f.get("file_path") or "-",
+                            f.get("title") or f.get("message", ""),
+                        )
+                        for f in stage["findings"]
+                    ],
+                )
+            if stage.get("uncertainties"):
+                self.panel("UNCERTAINTIES", "\n".join(stage["uncertainties"]), "warn")
+            if stage.get("test_recommendations"):
+                self.panel("RECOMMENDED TESTS", "\n".join(stage["test_recommendations"]))
+        usage_rows = []
+        usages = [("IMPLEMENTER", data.get("implementation_usage") or {})]
+        usages.extend(("REVIEWER", s) for s in proof.get("stages", []) if s["name"] == "reviewer")
+        for label, usage in usages:
+            cost = usage.get("estimated_cost_usd")
+            usage_rows.append(
+                (
+                    label,
+                    str(usage.get("input_tokens", 0)),
+                    str(usage.get("output_tokens", 0)),
+                    f"${cost:.5f}" if cost is not None else "unpriced",
+                )
+            )
+        self.table(["MODEL STAGE", "INPUT", "OUTPUT", "EST. USD"], usage_rows)
+        if data.get("last_error"):
+            self.panel("LAST FAILURE", data["last_error"], "bad")
+        command = (
+            f"aeo workbench accept {data['run_id']} --yes"
+            if ready
+            else f"aeo workbench show {data['run_id']} --diff"
+        )
+        self.panel("NEXT ACTION", command)
+        self.console.print(self.text("  Local evidence: " + data["evidence_directory"], "muted"))
 
     def dashboard(self, rows):
         if self.json_mode:
@@ -193,8 +277,11 @@ class UI:
         if not rows:
             self.panel(
                 "YOUR FIRST RUN",
-                'aeo6 demo\naeo6 feature "Your task" --write src/example.py --dry-run',
+                'aeo workbench demo\naeo workbench feature "Your task" --write src/example.py --dry-run',
             )
         self.console.print(
-            self.text("  feature  /  show  /  validate  /  accept  /  runs  /  doctor\n", "muted")
+            self.text(
+                "  feature  /  show  /  pipeline  /  report  /  accept  /  runs  /  doctor\n",
+                "muted",
+            )
         )

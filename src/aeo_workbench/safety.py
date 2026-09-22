@@ -78,3 +78,14 @@ def display_safe(value: object) -> str:
     return "".join(
         c for c in str(value) if c in "\n\t" or (ord(c) >= 32 and not 127 <= ord(c) <= 159)
     )
+
+
+def redact(value):
+    """Mask recognizable API keys in metadata, including historical V0.6 rows."""
+    if isinstance(value, str):
+        return re.sub(r"sk-[A-Za-z0-9_-]{12,}", "[REDACTED]", value)
+    if isinstance(value, dict):
+        return {k: redact(v) for k, v in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [redact(v) for v in value]
+    return value
